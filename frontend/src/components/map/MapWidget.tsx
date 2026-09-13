@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Tooltip, ZoomControl, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { RISK_LEVEL_META } from "@/lib/riskLevels";
 import type { VillageRisk } from "@/lib/types";
@@ -55,6 +55,10 @@ export default function MapWidget({
           attribution="Tiles &copy; Esri"
           maxZoom={16}
         />
+
+        {/* bottom-left, not bottom-right -- the village detail drawer slides
+            in from the right and would otherwise cover the controls */}
+        <ZoomControl position="bottomleft" />
 
         <MapController activeVillage={activeVillage} />
 

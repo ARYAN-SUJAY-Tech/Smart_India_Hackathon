@@ -39,4 +39,20 @@
     color: var(--text-primary);
     font-size: 15px;
   }
+
+  /* Theme Leaflet's default zoom control to match the dashboard instead of
+     its stock white box. */
+  .leaflet-control-zoom {
+    border: 1px solid var(--border-color) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  .leaflet-control-zoom a {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .leaflet-control-zoom a:hover {
+    background-color: var(--bg-surface-raised) !important;
+  }
 }
