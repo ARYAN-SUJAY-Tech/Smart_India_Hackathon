@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-base: var(--bg-base);
+  --color-surface: var(--bg-surface);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border-color);
+  --color-accent: var(--accent-primary);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  :root {
+    /* Flood Watch -- a monitoring dashboard, not a tactical ops screen.
+       Dark theme is legitimate for a situation-room tool, but kept soft
+       and high-contrast rather than near-black/glassy everywhere. */
+    --bg-base: #0a0f1a;
+    --bg-surface: #111a2c;
+    --bg-surface-raised: #16223a;
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-color: #263449;
+    --accent-primary: #0ea5e9;
+    /* text color for solid accent-colored buttons -- white-on-#0ea5e9 fails
+       WCAG AA contrast (~2.5:1), dark text on the bright accent passes */
+    --text-on-accent: #04101c;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 15px;
+  }
+}

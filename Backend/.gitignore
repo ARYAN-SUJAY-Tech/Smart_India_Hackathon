@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# virtual environments
+venv/
+.venv/
+env/
+
+# local SQLite prototype DB (created by seed_data.py / app startup)
+*.db
+*.db-journal
+
+# secrets
+.env
+.env.local
+
+# editor/OS
+.DS_Store
+.idea/
+.vscode/
+
+*.log

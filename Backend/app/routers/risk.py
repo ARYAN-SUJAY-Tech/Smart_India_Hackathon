@@ -44,26 +44,46 @@ def _latest_features(db: Session, village: Village) -> dict:
     }
 
 
-@router.get("/{village_id}", response_model=RiskOut)
-def get_village_risk(village_id: int, db: Session = Depends(get_db)):
-    village = db.query(Village).filter(Village.id == village_id).first()
-    if not village:
-        raise HTTPException(status_code=404, detail="Village not found")
+def _log_alert_if_changed(
+    db: Session, village: Village, score: float, level: str, factors: dict
+) -> None:
+    """
+    Log a row to alert_log only on a state transition (or the village's
+    first-ever computation), not on every risk check.
 
+    Without this guard, GET /risk/{id} logged an identical row on every
+    single call -- e.g. a judge refreshing Swagger UI, or a frontend
+    polling for a live map, floods alert_log with hundreds of duplicate
+    "still normal" rows and makes the alert timeline useless. A real
+    early-warning system alerts on state transitions, not on "checked
+    again, nothing changed", so that's the behavior both endpoints share.
+    """
+    last = (
+        db.query(AlertLog)
+        .filter(AlertLog.village_id == village.id)
+        .order_by(desc(AlertLog.timestamp))
+        .first()
+    )
+    if last is not None and last.risk_level == level:
+        return
+    db.add(
+        AlertLog(
+            village_id=village.id,
+            risk_score=score,
+            risk_level=level,
+            contributing_factors=json.dumps(factors),
+        )
+    )
+    db.commit()
+
+
+def _compute_risk(db: Session, village: Village) -> RiskOut:
     features = _latest_features(db, village)
     score = predict_risk(features)
     level = get_alert_level(score)
     factors = explain_risk(features)
 
-    # log every computed risk score for the alert history/demo timeline
-    log = AlertLog(
-        village_id=village.id,
-        risk_score=score,
-        risk_level=level,
-        contributing_factors=json.dumps(factors),
-    )
-    db.add(log)
-    db.commit()
+    _log_alert_if_changed(db, village, score, level, factors)
 
     return RiskOut(
         village_id=village.id,
@@ -75,24 +95,17 @@ def get_village_risk(village_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/{village_id}", response_model=RiskOut)
+def get_village_risk(village_id: int, db: Session = Depends(get_db)):
+    village = db.query(Village).filter(Village.id == village_id).first()
+    if not village:
+        raise HTTPException(status_code=404, detail="Village not found")
+
+    return _compute_risk(db, village)
+
+
 @router.get("/", response_model=list[RiskOut])
 def get_all_risk(db: Session = Depends(get_db)):
     """Risk for every village — feeds the map view."""
     villages = db.query(Village).all()
-    results = []
-    for village in villages:
-        features = _latest_features(db, village)
-        score = predict_risk(features)
-        level = get_alert_level(score)
-        factors = explain_risk(features)
-        results.append(
-            RiskOut(
-                village_id=village.id,
-                village_name=village.name,
-                risk_score=score,
-                risk_level=level,
-                contributing_factors=factors,
-                timestamp=datetime.now(timezone.utc),
-            )
-        )
-    return results
+    return [_compute_risk(db, village) for village in villages]
