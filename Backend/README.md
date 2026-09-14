@@ -1,7 +1,7 @@
-# Flash Flood & Landslide Early Warning — Backend Prototype
+# Flash Flood & Landslide Early Warning — Backend
 
-SIH PS 26192. Independent backend build — no ML model or frontend
-required to run and test everything below.
+SIH PS 26192. FastAPI backend, real trained models wired in from the
+ML repo (landslide RF + flood RF), live rainfall from Open-Meteo.
 
 ## Setup
 
@@ -9,58 +9,76 @@ required to run and test everything below.
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env          # fill in NASA Earthdata creds when ready
 ```
 
 ## Run
 
 ```bash
-python seed_data.py           # creates flashflood.db + 3 sample villages
+python seed_data.py           # creates flashflood.db + 3 placeholder villages
 uvicorn app.main:app --reload
 ```
 
-Open http://127.0.0.1:8000/docs for interactive Swagger UI — test every
-endpoint from the browser, no frontend needed.
+Open http://127.0.0.1:8000/docs for Swagger UI — every endpoint has a
+"try it out" button, no curl needed.
 
-## What's wired up today
+## Endpoints
 
-- `GET /health` — liveness check
-- `GET /villages` / `GET /villages/{id}` — village metadata + static terrain features
-- `POST /sensor/ingest` — the IoT-ready hook; accepts any reading (SMAP, IMD, simulated, or real IoT later)
-- `GET /risk/{village_id}` — computed risk score + alert level for one village (uses stub model)
-- `GET /risk/` — risk for all villages, feeds the map view later
-- `GET /alerts/` — recent alert history log
+- `GET /health`
+- `GET /villages` / `GET /villages/{id}` — village metadata + terrain (elevation, slope)
+- `POST /sensor/ingest` — logs a soil-moisture/rainfall reading (simulated, SMAP pull, or real IoT later — same endpoint either way)
+- `GET /risk/{village_id}` — runs both models + live rainfall, returns combined risk score + breakdown
+- `GET /risk/` — same, for every village (map view)
+- `GET /alerts/` — risk history log
 
-## What's a placeholder, on purpose
-
-- `app/services/risk_model.py` — `predict_risk()` is a heuristic stub.
-  Swap the function body with the trained Random Forest. Nothing else
-  in the backend needs to change — routers only ever call this function.
-- `app/models/schemas.py` — `RiskOut` field names are placeholders.
-  Lock these with the ML teammate today, then update here.
-- `app/services/smap_client.py` — real AppEEARS task flow not yet
-  implemented (it's async: submit → poll → download). Use
-  `simulate_soil_moisture()` for end-to-end testing until then.
-
-## Try it end-to-end right now
+## Try it
 
 ```bash
-# simulate a sensor/SMAP reading for village 1
 curl -X POST http://127.0.0.1:8000/sensor/ingest \
   -H "Content-Type: application/json" \
-  -d '{"village_id": 1, "soil_moisture": 0.55, "rainfall_mm": 120, "source": "simulated"}'
+  -d '{"village_id": 1, "soil_moisture": 0.38, "source": "simulated"}'
 
-# get computed risk for that village
 curl http://127.0.0.1:8000/risk/1
 
-# see it logged in the alert history
 curl http://127.0.0.1:8000/alerts/
 ```
 
-## Next steps (once ML/frontend contracts are locked)
+`GET /risk/1` is the one worth watching — it pulls elevation/slope from
+the DB, soil moisture from whatever was last ingested, and rainfall
+live from Open-Meteo, then runs both models.
 
-1. Replace `predict_risk()` with the trained model call
-2. Finalize `RiskOut` / feature-dict field names in `schemas.py` and `risk_model.py`
-3. Run `dem_processing.py` against your real hilly-region DEM tile to populate real `elevation_m`/`slope_deg` per village (replace `seed_data.py` values)
-4. Implement the real AppEEARS flow in `smap_client.py`, on an APScheduler job pushing into `/sensor/ingest`
-5. Point CORS + DB at whatever the frontend/deployment needs
+## How risk is computed
+
+Two separate trained models from the ML repo, both loaded in
+`app/services/risk_model.py`:
+
+- `sikkim_landslide_rf_model.pkl` — elevation, slope, soil_moisture → landslide probability
+- `sikkim_flood_model.pkl` — elevation, slope, rainfall (total/mean/max), soil_moisture (mean/max) → flood probability
+
+`risk_score` = max of the two, since a village should get flagged if
+either hazard is elevated. Both scores are still broken out separately
+in `contributing_factors` so nothing's hidden.
+
+Rainfall comes from `app/services/rainfall_client.py` (Open-Meteo,
+no API key). If that call fails, it falls back to zero rainfall rather
+than crashing the endpoint — logs a warning, doesn't 500.
+
+## Seed data — what it's actually for
+
+`seed_data.py` just inserts 3 placeholder villages with made-up
+lat/lon/elevation/slope so there's *something* in the DB to hit
+`/risk/{id}` against. It's not real Sikkim data. Once real village
+boundaries + his `Sikkim.tif` are used to populate the villages table
+properly (via `dem_processing.py`), this script becomes unnecessary —
+delete it or repoint it at the real loader.
+
+## Known gaps
+
+- `soil_moisture` in `/sensor/ingest` is manual/simulated right now.
+  The real SMAP AppEEARS pull (`app/services/smap_client.py`) isn't
+  implemented yet — it's an async submit/poll/download flow, not a
+  single request. Use `simulate_soil_moisture()` until that's built.
+- Village terrain (`elevation_m`, `slope_deg`) needs to come from his
+  exact `Sikkim.tif`, not an independently downloaded DEM — pixel
+  values won't match otherwise.
+- CORS is wide open (`allow_origins=["*"]`) — fine for the demo, tighten
+  before this goes anywhere real.
