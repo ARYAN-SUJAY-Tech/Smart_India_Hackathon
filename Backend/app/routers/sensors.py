@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -26,7 +28,11 @@ def ingest_reading(payload: SensorIngestIn, db: Session = Depends(get_db)):
         soil_moisture=payload.soil_moisture,
         rainfall_mm=payload.rainfall_mm,
         water_level_m=payload.water_level_m,
-        timestamp=payload.timestamp or None,
+        # explicitly set (not passed-through-as-None): SQLAlchemy's column
+        # default only fires when the attribute is unset, not when it's
+        # set to None -- passing None here would store NULL and break
+        # "latest reading" ordering in risk.py's _latest_features query
+        timestamp=payload.timestamp or datetime.now(timezone.utc),
     )
     db.add(reading)
     db.commit()
