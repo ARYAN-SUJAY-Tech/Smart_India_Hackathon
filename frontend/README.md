@@ -12,6 +12,7 @@ simulate a sensor reading, and an alert history — not a production build.
 
 ```bash
 npm install
+cp .env.example .env.local    # only needed if your backend isn't on the default port
 ```
 
 The backend must be running separately (see `../Backend/README.md`) —
