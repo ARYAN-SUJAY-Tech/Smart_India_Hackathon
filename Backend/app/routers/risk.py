@@ -18,18 +18,10 @@ def _latest_features(db: Session, village: Village) -> dict:
     Assemble the feature dict for one village from its latest sensor
     reading + static terrain fields.
 
-    Keys are LOCKED to match ML_pipeline.ipynb exactly:
-    "elevation", "slope", "soil_moisture" -- bare names, no unit
-    suffixes, since that's what predict_risk() (and eventually the
-    real Random Forest) expects. DB columns keep unit-suffixed names
-    (elevation_m, slope_deg) for clarity in storage; this function is
-    the single place that translates DB naming -> model naming, so if
-    his feature names ever change, this is the only line to touch.
-
-    rainfall_mm is deliberately NOT included here -- his model doesn't
-    consume it yet (see risk_model.py). It's still logged on every
-    SensorReading and available for a separate alerting escalation
-    rule if we want to use it before it's a model feature.
+    Keys are LOCKED to match the new sikkim_flood_model.pkl exactly:
+    "elevation", "max_rainfall", "mean_rainfall", "total_rainfall", 
+    "slope", "mean_soil_moisture", "max_soil_moisture".
+    DB columns keep unit-suffixed names for clarity in storage.
     """
     latest = (
         db.query(SensorReading)
@@ -39,8 +31,12 @@ def _latest_features(db: Session, village: Village) -> dict:
     )
     return {
         "elevation": village.elevation_m or 0.0,
+        "max_rainfall": latest.rainfall_mm if latest else 0.0,
+        "mean_rainfall": latest.rainfall_mm if latest else 0.0,
+        "total_rainfall": latest.rainfall_mm if latest else 0.0,
         "slope": village.slope_deg or 0.0,
-        "soil_moisture": latest.soil_moisture if latest else 0.0,
+        "mean_soil_moisture": latest.soil_moisture if latest else 0.0,
+        "max_soil_moisture": latest.soil_moisture if latest else 0.0,
     }
 
 
