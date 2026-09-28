@@ -36,7 +36,12 @@ def predict_risk(features: Dict[str, float]) -> float:
         - max_soil_moisture
     """
     model = _get_model()
-    row = {k: features.get(k, 0.0) for k in _FEATURE_ORDER}
+    
+    def _safe_get(key: str, default: float = 0.0) -> float:
+        val = features.get(key)
+        return float(val) if val is not None else default
+        
+    row = {k: _safe_get(k) for k in _FEATURE_ORDER}
     X = pd.DataFrame([row], columns=_FEATURE_ORDER)
     proba = model.predict_proba(X)[0]
     # classes_ = [0, 1] -- index 1 is positive probability
@@ -51,14 +56,18 @@ def explain_risk(features: Dict[str, float]) -> Dict[str, float]:
     model = _get_model()
     importances = dict(zip(model.feature_names_in_, model.feature_importances_))
 
+    def _safe_get(key: str, default: float = 0.0) -> float:
+        val = features.get(key)
+        return float(val) if val is not None else default
+
     # rough normalization ranges
-    elevation_norm = min(features.get("elevation", 0.0) / 2500.0, 1.0)
-    slope_norm = min(features.get("slope", 0.0) / 60.0, 1.0)
-    mean_sm_norm = min(features.get("mean_soil_moisture", 0.0) / 0.48, 1.0)
-    max_sm_norm = min(features.get("max_soil_moisture", 0.0) / 0.48, 1.0)
-    total_rain_norm = min(features.get("total_rainfall", 0.0) / 200.0, 1.0)
-    mean_rain_norm = min(features.get("mean_rainfall", 0.0) / 100.0, 1.0)
-    max_rain_norm = min(features.get("max_rainfall", 0.0) / 150.0, 1.0)
+    elevation_norm = min(_safe_get("elevation") / 2500.0, 1.0)
+    slope_norm = min(_safe_get("slope") / 60.0, 1.0)
+    mean_sm_norm = min(_safe_get("mean_soil_moisture") / 0.48, 1.0)
+    max_sm_norm = min(_safe_get("max_soil_moisture") / 0.48, 1.0)
+    total_rain_norm = min(_safe_get("total_rainfall") / 200.0, 1.0)
+    mean_rain_norm = min(_safe_get("mean_rainfall") / 100.0, 1.0)
+    max_rain_norm = min(_safe_get("max_rainfall") / 150.0, 1.0)
 
     raw = {
         "elevation": importances.get("elevation", 0.0) * elevation_norm,
