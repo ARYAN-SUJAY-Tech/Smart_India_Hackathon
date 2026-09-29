@@ -40,6 +40,9 @@ def _latest_features(db: Session, village: Village) -> dict:
     }
 
 
+import threading
+_alert_lock = threading.Lock()
+
 def _log_alert_if_changed(
     db: Session, village: Village, score: float, level: str, factors: dict
 ) -> None:
@@ -54,23 +57,24 @@ def _log_alert_if_changed(
     early-warning system alerts on state transitions, not on "checked
     again, nothing changed", so that's the behavior both endpoints share.
     """
-    last = (
-        db.query(AlertLog)
-        .filter(AlertLog.village_id == village.id)
-        .order_by(desc(AlertLog.timestamp))
-        .first()
-    )
-    if last is not None and last.risk_level == level:
-        return
-    db.add(
-        AlertLog(
-            village_id=village.id,
-            risk_score=score,
-            risk_level=level,
-            contributing_factors=json.dumps(factors),
+    with _alert_lock:
+        last = (
+            db.query(AlertLog)
+            .filter(AlertLog.village_id == village.id)
+            .order_by(desc(AlertLog.timestamp))
+            .first()
         )
-    )
-    db.commit()
+        if last is not None and last.risk_level == level:
+            return
+        db.add(
+            AlertLog(
+                village_id=village.id,
+                risk_score=score,
+                risk_level=level,
+                contributing_factors=json.dumps(factors),
+            )
+        )
+        db.commit()
 
 
 def _compute_risk(db: Session, village: Village) -> RiskOut:
