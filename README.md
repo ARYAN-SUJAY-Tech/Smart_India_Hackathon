@@ -1,104 +1,76 @@
-# Flash Flood Prediction System for Hilly Regions using Multi-Source Data Theme
+# Flash Flood & Landslide Prediction System for Hilly Regions
 
 **Smart India Hackathon — Problem Statement 26192**
-*Flash Flood Prediction System for Hilly Regions using Multi-Source Data*
-Organization: Ministry of Home Affairs · Department: NDRF, DM Division · Theme: Disaster Management
+*Ministry of Home Affairs · NDRF, DM Division · Theme: Disaster Management*
 
-## The problem
+## The Problem
+Hilly states in India are highly vulnerable to landslides and flash floods that strike with very short warning times. Current early warning mechanisms aren't hyper-local or fast enough for timely evacuation. We aim to integrate rainfall, soil moisture, slope stability, historical landslide inventories, and real-time IoT inputs into a system that forecasts risk at the **village/ward level**, with enough lead time to actually act on it.
 
-Hilly states in India are highly vulnerable to landslides and flash
-floods that often strike with very short warning times, and current
-early warning mechanisms aren't hyper-local or fast enough for timely
-evacuation. The ask: integrate rainfall, soil moisture, slope
-stability, historical landslide inventories, and real-time IoT inputs
-into a system that forecasts risk at the **village/ward level**, with
-enough lead time to actually act on it.
+## Our Solution
+We built an end-to-end ML and IoT pipeline that delivers hyper-local risk scores directly to a live dashboard.
 
-## Our solution, and how it maps to that ask
-
-| Expected Solution asks for... | What we built |
+| The Ask | What we built |
 |---|---|
-| Slope stability / terrain modelling | DEM-derived `elevation`, `slope`, `aspect`, `curvature` per village ([`ML/`](ML/README.md), [`Backend/app/services/dem_processing.py`](Backend/app/services/dem_processing.py)) |
-| Historical landslide inventories | 210-point labeled Sikkim dataset feeding a Random Forest classifier ([`ML/sikkim_landslide_dataset.csv`](ML/sikkim_landslide_dataset.csv)) |
-| Soil moisture | NASA SMAP retrievals (2022–2024, `ML/smap_data/`) for training; a single ingestion endpoint for live readings in production |
-| Real-time IoT inputs | `POST /sensor/ingest` — one endpoint any sensor, SMAP puller, or IMD feed can push to ([`Backend/README.md`](Backend/README.md)) |
-| Hyper-local, village/ward-level forecasts | Every village gets its own `risk_score` (0–1) and `risk_level`, not a regional/state-level number |
-| Actionable lead time / early warning | Risk levels use IMD's own colour-coded scheme (Normal → Be Aware → Be Prepared → Take Action), with an alert history log, surfaced on a live map dashboard ([`frontend/README.md`](frontend/README.md)) |
-| Rainfall data | **Gap, not yet closed** — collected on every sensor reading but not yet a model input; see [`ML/README.md`](ML/README.md#known-limitations-on-purpose) |
+| Slope stability & terrain | DEM-derived `elevation` and `slope` per village using CartoDEM/SRTM ([`ML/`](ML/README.md), [`Backend/app/services/dem_processing.py`](Backend/app/services/dem_processing.py)) |
+| Historical inventories | 210-point labeled Sikkim dataset feeding a Random Forest classifier ([`ML/sikkim_landslide_dataset.csv`](ML/sikkim_landslide_dataset.csv)) |
+| Soil moisture | NASA SMAP retrievals for training; simulated point ingestion for live readings in production |
+| Rainfall data | Training on NASA CHIRPS daily precipitation; live forecasting via Open-Meteo API integration |
+| Real-time IoT inputs | `POST /sensor/ingest` — a single endpoint any hardware sensor or API scraper can push to |
+| Hyper-local forecasts | 27 real Sikkim villages seeded. Every village gets its own `risk_score` (0–1) and `risk_level` |
+| Actionable early warning | IMD colour-coded scheme (Normal → Watch → Warning → Severe) surfaced on a live Next.js map dashboard ([`frontend/README.md`](frontend/README.md)) |
 
 ## Architecture
 
-```
-ML/                        Backend/                         frontend/
+```text
+ML/                        Backend/ (FastAPI)               frontend/ (Next.js)
 ─────────────────────      ─────────────────────────        ──────────────────────
 Sikkim.tif (DEM)      ──►  dem_processing.py           
-smap_data/ (SMAP)     ──►  (elevation/slope/soil_moisture)
-sikkim_landslide_          per village, stored in SQLite
-  dataset.csv (labels)                │
+CHIRPS & SMAP         ──►  Terrain + Sensor data
+sikkim_landslide_          saved in SQLite DB
+  dataset.csv                         │
        │                              ▼
-       ▼                   risk_model.py  ◄── loads sikkim_landslide_rf_model.pkl
-train.py                        │
-  │ trains, spatially           ▼
-  │ cross-validates,      risk.py routers
-  ▼ exports .pkl           GET /risk/, /risk/{id}     ──►  DataContext polls every 5s
-sikkim_landslide_          GET /villages/, /alerts/    ──►  MapWidget, VillageList,
-  rf_model.pkl             POST /sensor/ingest         ◄──  AlertTimeline, Sensor
-                            (real IoT hook today,            simulate tool, detail
-                             simulated for the demo)         drawer w/ contributing_factors
+       ▼                   risk_model.py  ◄── loads sikkim_flood_model.pkl
+train.py                        │             (7 features: rain, soil, terrain)
+  │ trains &                    ▼
+  │ cross-validates       risk.py routers
+  ▼ exports .pkl          GET /risk/                 ──►  DataContext polls every 5s
+sikkim_flood_             GET /villages/, /alerts/   ──►  Live Map, Village List,
+  model.pkl               POST /sensor/ingest        ◄──  Alert Timeline, and Sensor
+                          (IoT hook / simulator)          simulator UI
 ```
 
-The three folders are independent, connected only by the two contracts
-each README documents: the model's `["elevation", "slope",
-"soil_moisture"]` feature order (ML ↔ Backend), and the JSON shapes in
-`Backend/app/models/schemas.py` (Backend ↔ frontend).
+The three folders are independent but strictly connected by API contracts and the expected ML features (`elevation, max_rainfall, mean_rainfall, total_rainfall, slope, mean_soil_moisture, max_soil_moisture`).
 
-## Repo layout
+## Repo Layout
 
-- **[`ML/`](ML/README.md)** — training data (DEM, SMAP rasters, labeled
-  landslide inventory) and the script that trains/exports the Random
-  Forest risk model.
-- **[`Backend/`](Backend/README.md)** — FastAPI service: village/terrain
-  data, sensor ingestion, risk computation via the trained model, and
-  alert history logging.
-- **[`frontend/`](frontend/README.md)** — Next.js dashboard: live map of
-  village risk, an at-a-glance severity summary, alert history, and a
-  village detail view with the model's contributing factors.
+- **[`ML/`](ML/README.md)** — Training data (DEM, SMAP, CHIRPS, labeled inventory) and scripts to train/export the Random Forest model.
+- **[`Backend/`](Backend/README.md)** — FastAPI service handling village/terrain data, sensor ingestion, live risk computation via the `.pkl` model, and alert history logging.
+- **[`frontend/`](frontend/README.md)** — Next.js dashboard featuring a live interactive map, village risk summaries, alert timelines, and the IoT simulator.
 
-## Running it end-to-end
+## Running It Locally
+
+You need two terminals to run the backend and frontend simultaneously.
 
 ```bash
-# 1. Backend
+# 1. Backend (FastAPI + ML)
 cd Backend
-python -m venv venv && source venv/bin/activate
+python -m venv venv
+source venv/bin/activate      # On Windows: .\venv\Scripts\activate
 pip install -r requirements.txt
-python seed_data.py
-uvicorn app.main:app --reload          # http://127.0.0.1:8000
+python seed_sikkim.py         # Seeds DB with 27 real Sikkim villages
+uvicorn app.main:app --reload # Runs on http://127.0.0.1:8000
 
-# 2. Frontend (separate terminal)
+# 2. Frontend (Next.js) - in a new terminal
 cd frontend
 npm install
-npm run dev                            # http://localhost:3000
+npm run dev                   # Runs on http://localhost:3000
 ```
 
-Open the frontend, use its "Simulate Sensor Reading" tool (clearly
-marked as a demo stand-in for a real IoT/SMAP feed), and watch the
-corresponding village's marker color, risk score, and alert history
-update live. Full details, including how to retrain the model, are in
-each folder's own README linked above.
+Open `http://localhost:3000`. Use the "Simulate Sensor Reading" tool to push dummy IoT data to the backend. Watch the map markers change color, risk scores recalculate, and the alert history log update instantly.
 
-## Honest scope
+## Scope & Limitations
 
-This is a hackathon prototype, not a production deployment:
+This is a functional prototype designed for SIH, not a production-ready enterprise deployment:
 
-- **Real:** the DEM/SMAP/historical-inventory-trained Random Forest
-  model, the village-level API contract, the live map/alerting UI, and
-  the IoT-ready `/sensor/ingest` hook (any real sensor can start
-  POSTing to it with no architecture change).
-- **Simulated for the demo:** actual hardware sensors (the ingestion
-  endpoint accepts simulated readings), the NASA AppEEARS automation
-  for pulling live SMAP data (`Backend/app/services/smap_client.py`
-  isn't wired to a live feed yet), and the three seeded villages'
-  coordinates (placeholder, not real village records).
-- **No auth, tests, or CI** — out of scope for the hackathon build; see
-  each sub-README's own "next steps" section for what a production
-  path would need.
+- **Current scope:** The ML model trained on real DEM/SMAP/CHIRPS data, the village-level API contract, the live dashboard UI, and the IoT-ready `/sensor/ingest` hook.
+- **Simulated part:** Actual hardware sensors (we use a UI simulator to POST to the real endpoint) and live automated NASA AppEEARS scraping (stubbed out for the demo to avoid API rate limits/timeouts).
